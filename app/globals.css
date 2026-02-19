@@ -33,6 +33,36 @@ body {
   margin-top: 1rem;
 }
 
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.step {
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.step.active {
+  border-color: #111;
+  color: #111;
+}
+
+.step.done {
+  background: #f3f4f6;
+  color: #111;
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;
@@ -87,19 +117,30 @@ body {
   justify-content: flex-start;
 }
 
+.actionsSticky {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding: 0.5rem 0;
+  z-index: 2;
+}
+
 .presets {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-button {
+button,
+.buttonLike {
   border: 0;
   border-radius: 8px;
   padding: 0.6rem 0.9rem;
   background: #111;
   color: #fff;
   font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
 }
 
 button:disabled {
@@ -125,6 +166,96 @@ small {
   color: #374151;
 }
 
+.queue {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.queueList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.queueItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.55rem 0.6rem;
+  background: #fafafa;
+}
+
+.queueMeta {
+  min-width: 0;
+}
+
+.queueName {
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 260px;
+}
+
+.queueState {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.statusPill {
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: #e5e7eb;
+  color: #111;
+}
+
+.status-processing {
+  background: #111;
+  color: #fff;
+}
+
+.status-done {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-cancelled {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.queueDownload {
+  color: #111;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trust {
+  margin: 0;
+  color: #374151;
+  font-size: 0.85rem;
+}
+
 .result {
   display: grid;
   gap: 0.75rem;
@@ -132,6 +263,21 @@ small {
   border-radius: 10px;
   padding: 0.75rem;
   background: #fafafa;
+}
+
+.outcome {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.savingsBadge {
+  margin: 0;
+  width: fit-content;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  font-weight: 700;
+  padding: 0.3rem 0.65rem;
 }
 
 .stats {
@@ -157,22 +303,6 @@ small {
   max-height: 320px;
   object-fit: contain;
   display: block;
-}
-
-.download {
-  display: inline-block;
-  width: fit-content;
-  text-decoration: none;
-  border-radius: 8px;
-  padding: 0.6rem 0.9rem;
-  background: #111;
-  color: #fff;
-  font-weight: 600;
-}
-
-.download.disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .bench {
@@ -212,4 +342,22 @@ small {
   margin: 0;
   color: #111;
   font-weight: 600;
+}
+
+@media (min-width: 769px) {
+  .actionsSticky {
+    position: static;
+    padding: 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  .queueName {
+    max-width: 170px;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
 }

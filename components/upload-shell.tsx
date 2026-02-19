@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toWebpFilename } from "@/lib/file-name";
 import { formatBytes } from "@/lib/format";
 import {
   cancelActiveEncoding,
@@ -19,81 +18,112 @@ type ConversionResult = {
   durationMs: number;
 };
 
+type QueueItem = {
+  id: string;
+  file: File;
+  status: "queued" | "processing" | "done" | "error" | "cancelled";
+  result?: ConversionResult;
+  errorMessage?: string;
+};
+
 const QUALITY_PRESETS = [
-  { label: "Low", value: 45 },
-  { label: "Medium", value: 70 },
-  { label: "High", value: 85 },
+  { label: "Web", value: 55 },
+  { label: "Email", value: 72 },
+  { label: "Max Quality", value: 90 },
 ] as const;
 
 export function UploadShell() {
   const [quality, setQuality] = useState(75);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [result, setResult] = useState<ConversionResult | null>(null);
+  const [latestResult, setLatestResult] = useState<ConversionResult | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const latestResultUrlRef = useRef<string | null>(null);
+  const resultUrlsRef = useRef<string[]>([]);
+  const cancellationRequestedRef = useRef(false);
 
   const fileInfo = useMemo(() => {
-    if (!selectedFile) {
+    if (queueItems.length === 0) {
       return "No file selected";
     }
 
-    return `${selectedFile.name} (${formatBytes(selectedFile.size)})`;
-  }, [selectedFile]);
+    if (queueItems.length === 1) {
+      return `${queueItems[0].file.name} (${formatBytes(queueItems[0].file.size)})`;
+    }
 
-  useEffect(() => {
-    latestResultUrlRef.current = result?.url ?? null;
-  }, [result]);
+    const totalBytes = queueItems.reduce((sum, item) => sum + item.file.size, 0);
+    return `${queueItems.length} files (${formatBytes(totalBytes)})`;
+  }, [queueItems]);
 
   useEffect(() => {
     return () => {
-      if (latestResultUrlRef.current) {
-        URL.revokeObjectURL(latestResultUrlRef.current);
+      for (const url of resultUrlsRef.current) {
+        URL.revokeObjectURL(url);
       }
       cancelActiveEncoding();
       disposeEncoderWorker();
     };
   }, []);
 
-  function clearPreviousResult() {
-    if (latestResultUrlRef.current) {
-      URL.revokeObjectURL(latestResultUrlRef.current);
-      latestResultUrlRef.current = null;
+  const completedCount = queueItems.filter((item) => item.status === "done").length;
+  const processingItem = queueItems.find((item) => item.status === "processing");
+
+  function clearQueueResults() {
+    for (const url of resultUrlsRef.current) {
+      URL.revokeObjectURL(url);
     }
-    setResult(null);
+    resultUrlsRef.current = [];
+    setLatestResult(null);
+    setQueueItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        status: "queued",
+        result: undefined,
+        errorMessage: undefined,
+      })),
+    );
   }
 
-  function applySelectedFile(file: File | null) {
-    if (!file) {
-      setSelectedFile(null);
+  function applySelectedFiles(files: File[]) {
+    if (files.length === 0) {
+      setQueueItems([]);
       setErrorMessage(null);
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
+    const validFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (validFiles.length === 0) {
+      setQueueItems([]);
       setErrorMessage("Please select an image file.");
       return;
     }
 
-    clearPreviousResult();
-    setSelectedFile(file);
-    setErrorMessage(null);
+    const skipped = files.length - validFiles.length;
+
+    clearQueueResults();
+    setQueueItems(
+      validFiles.map((file, index) => ({
+        id: `${file.name}-${file.lastModified}-${index}`,
+        file,
+        status: "queued",
+      })),
+    );
+    setErrorMessage(skipped > 0 ? `${skipped} non-image file(s) were skipped.` : null);
     setIsCancelled(false);
   }
 
   function onSelectFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    applySelectedFile(file);
+    const files = Array.from(event.target.files ?? []);
+    applySelectedFiles(files);
   }
 
   function onDrop(event: React.DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setIsDragActive(false);
-    const file = event.dataTransfer.files?.[0] ?? null;
-    applySelectedFile(file);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    applySelectedFiles(files);
   }
 
   function onDragOver(event: React.DragEvent<HTMLLabelElement>) {
@@ -107,34 +137,98 @@ export function UploadShell() {
   }
 
   async function onConvert() {
-    if (!selectedFile || isConverting) {
+    if (queueItems.length === 0 || isConverting) {
       return;
     }
 
     setIsConverting(true);
     setErrorMessage(null);
     setIsCancelled(false);
-    clearPreviousResult();
+    cancellationRequestedRef.current = false;
+    clearQueueResults();
+
+    let workingQueue: QueueItem[] = queueItems.map((item) => ({
+      ...item,
+      status: "queued",
+      result: undefined,
+      errorMessage: undefined,
+    }));
+    setQueueItems(workingQueue);
+    let firstError: string | null = null;
 
     try {
-      const inputBuffer = await selectedFile.arrayBuffer();
-      const response = await encodeImageWithWorker({
-        fileName: selectedFile.name,
-        mimeType: selectedFile.type,
-        buffer: inputBuffer,
-        quality,
-      });
+      for (let index = 0; index < workingQueue.length; index += 1) {
+        if (cancellationRequestedRef.current) {
+          workingQueue = workingQueue.map((item) =>
+            item.status === "queued" ? { ...item, status: "cancelled" } : item,
+          );
+          setQueueItems([...workingQueue]);
+          setIsCancelled(true);
+          break;
+        }
 
-      const outputBlob = new Blob([response.outputBuffer], { type: "image/webp" });
-      const outputUrl = URL.createObjectURL(outputBlob);
+        const queueItem = workingQueue[index];
+        workingQueue[index] = { ...queueItem, status: "processing", errorMessage: undefined, result: undefined };
+        setQueueItems([...workingQueue]);
 
-      setResult({
-        fileName: response.fileName,
-        url: outputUrl,
-        inputBytes: response.inputBytes,
-        outputBytes: response.outputBytes,
-        durationMs: response.durationMs,
-      });
+        try {
+          const inputBuffer = await queueItem.file.arrayBuffer();
+          const response = await encodeImageWithWorker({
+            fileName: queueItem.file.name,
+            mimeType: queueItem.file.type,
+            buffer: inputBuffer,
+            quality,
+          });
+
+          const outputBlob = new Blob([response.outputBuffer], { type: "image/webp" });
+          const outputUrl = URL.createObjectURL(outputBlob);
+          resultUrlsRef.current.push(outputUrl);
+
+          const nextResult: ConversionResult = {
+            fileName: response.fileName,
+            url: outputUrl,
+            inputBytes: response.inputBytes,
+            outputBytes: response.outputBytes,
+            durationMs: response.durationMs,
+          };
+
+          workingQueue[index] = {
+            ...queueItem,
+            status: "done",
+            result: nextResult,
+          };
+
+          setLatestResult(nextResult);
+          setQueueItems([...workingQueue]);
+        } catch (error) {
+          if (isEncodingCancelledError(error)) {
+            workingQueue[index] = { ...queueItem, status: "cancelled" };
+            workingQueue = workingQueue.map((item) =>
+              item.status === "queued" ? { ...item, status: "cancelled" } : item,
+            );
+            setQueueItems([...workingQueue]);
+            setIsCancelled(true);
+            break;
+          }
+
+          const fallback = "Failed to convert image. Please try a different file.";
+          const message = error instanceof Error ? error.message : fallback;
+          if (!firstError) {
+            firstError = message;
+          }
+
+          workingQueue[index] = {
+            ...queueItem,
+            status: "error",
+            errorMessage: message,
+          };
+          setQueueItems([...workingQueue]);
+        }
+      }
+
+      if (firstError) {
+        setErrorMessage(firstError);
+      }
     } catch (error) {
       if (isEncodingCancelledError(error)) {
         setIsCancelled(true);
@@ -150,14 +244,16 @@ export function UploadShell() {
 
   function onReset() {
     if (isConverting) {
+      cancellationRequestedRef.current = true;
       cancelActiveEncoding();
-      setIsConverting(false);
-      setIsCancelled(true);
+      return;
     }
 
-    clearPreviousResult();
-    setSelectedFile(null);
+    clearQueueResults();
+    setQueueItems([]);
+    setLatestResult(null);
     setErrorMessage(null);
+    setIsCancelled(false);
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -172,28 +268,44 @@ export function UploadShell() {
     inputRef.current?.click();
   }
 
-  const canConvert = Boolean(selectedFile) && !isConverting;
-  const canReset = Boolean(selectedFile) || Boolean(result) || isConverting;
+  const canConvert = queueItems.length > 0 && !isConverting;
+  const canReset = queueItems.length > 0 || Boolean(latestResult) || isConverting;
+  const currentStep = latestResult ? 3 : queueItems.length > 0 ? 2 : 1;
   const ratio =
-    result && result.inputBytes > 0
-      ? Math.max(0, ((result.inputBytes - result.outputBytes) / result.inputBytes) * 100)
+    latestResult && latestResult.inputBytes > 0
+      ? Math.max(0, ((latestResult.inputBytes - latestResult.outputBytes) / latestResult.inputBytes) * 100)
       : 0;
-  const downloadName = selectedFile ? toWebpFilename(selectedFile.name) : "image.webp";
-  const outputName = result?.fileName ?? downloadName;
+  const outputName = latestResult?.fileName ?? "image.webp";
 
   let statusText = "Ready. Select an image to begin.";
   if (isConverting) {
-    statusText = "Converting image in Web Worker...";
+    statusText = processingItem
+      ? `Converting ${processingItem.file.name} (${completedCount + 1}/${queueItems.length})... keep this tab open.`
+      : "Converting images in Web Worker... keep this tab open.";
   } else if (isCancelled) {
     statusText = "Conversion cancelled.";
   } else if (errorMessage) {
     statusText = errorMessage;
-  } else if (result) {
-    statusText = `Done. Saved ${ratio.toFixed(1)}% (${formatBytes(result.outputBytes)}).`;
+  } else if (latestResult) {
+    statusText = `Done. Converted ${completedCount}/${queueItems.length} file(s). Download your latest WebP next.`;
+  } else {
+    statusText = "Select or drop an image to start. Processing stays in your browser.";
   }
 
   return (
     <div className="shell">
+      <ol className="steps" aria-label="Conversion steps">
+        <li className={`step ${currentStep === 1 ? "active" : ""} ${currentStep > 1 ? "done" : ""}`}>
+          Upload image
+        </li>
+        <li className={`step ${currentStep === 2 ? "active" : ""} ${currentStep > 2 ? "done" : ""}`}>
+          Tune quality
+        </li>
+        <li className={`step ${currentStep === 3 ? "active" : ""}`}>
+          Download WebP
+        </li>
+      </ol>
+
       <div className="field">
         <label
           htmlFor="image-upload"
@@ -213,10 +325,12 @@ export function UploadShell() {
           id="image-upload"
           type="file"
           accept="image/*"
+          multiple
           onChange={onSelectFile}
           className="visuallyHidden"
         />
         <small>{fileInfo}</small>
+        <p className="trust">Runs locally in your browser. No upload required.</p>
       </div>
 
       <div className="field">
@@ -234,7 +348,7 @@ export function UploadShell() {
           onChange={(event) => setQuality(Number(event.target.value))}
           aria-describedby="quality-help"
         />
-        <small id="quality-help">Higher quality usually means larger file size.</small>
+        <small id="quality-help">Higher quality usually means larger files. Presets are intent-focused.</small>
         <div className="presets" role="group" aria-label="Quality presets">
           {QUALITY_PRESETS.map((preset) => (
             <button
@@ -250,10 +364,16 @@ export function UploadShell() {
         </div>
       </div>
 
-      <div className="row actions">
-        <button type="button" disabled={!canConvert} onClick={onConvert}>
-          {isConverting ? "Converting..." : "Convert to WebP"}
-        </button>
+      <div className="row actions actionsSticky">
+        {latestResult && !isConverting ? (
+          <a className="buttonLike" href={latestResult.url} download={outputName}>
+            Download WebP
+          </a>
+        ) : (
+          <button type="button" disabled={!canConvert} onClick={onConvert}>
+            {isConverting ? "Converting..." : "Convert to WebP"}
+          </button>
+        )}
         <button type="button" disabled={!canReset} onClick={onReset}>
           {isConverting ? "Cancel" : "Reset"}
         </button>
@@ -263,7 +383,45 @@ export function UploadShell() {
         {statusText}
       </p>
 
+      {queueItems.length > 0 && (
+        <section className="queue" aria-live="polite">
+          <div className="row">
+            <strong>Batch Queue</strong>
+            <small>
+              {completedCount}/{queueItems.length} completed
+            </small>
+          </div>
+          <ul className="queueList">
+            {queueItems.map((item) => (
+              <li key={item.id} className="queueItem">
+                <div className="queueMeta">
+                  <p className="queueName">{item.file.name}</p>
+                  <small>{formatBytes(item.file.size)}</small>
+                </div>
+                <div className="queueState">
+                  <span className={`statusPill status-${item.status}`}>{item.status}</span>
+                  {item.result && (
+                    <a className="queueDownload" href={item.result.url} download={item.result.fileName}>
+                      Download
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="result" aria-live="polite">
+        {latestResult && (
+          <div className="outcome">
+            <p className="savingsBadge">You saved {ratio.toFixed(1)}%</p>
+            <small>
+              {formatBytes(latestResult.inputBytes)} → {formatBytes(latestResult.outputBytes)} in {latestResult.durationMs} ms
+            </small>
+          </div>
+        )}
+
         <div className="field">
           <strong>Output</strong>
           <span>{outputName}</span>
@@ -271,24 +429,24 @@ export function UploadShell() {
 
         <div className="stats">
           <div>
-            <small>Input</small>
-            <p>{result ? formatBytes(result.inputBytes) : "-"}</p>
+            <small>Before</small>
+            <p>{latestResult ? formatBytes(latestResult.inputBytes) : "-"}</p>
           </div>
           <div>
-            <small>Output</small>
-            <p>{result ? `${formatBytes(result.outputBytes)} • ${ratio.toFixed(1)}% saved` : "-"}</p>
+            <small>After</small>
+            <p>{latestResult ? `${formatBytes(latestResult.outputBytes)} • ${ratio.toFixed(1)}% saved` : "-"}</p>
           </div>
           <div>
             <small>Duration</small>
-            <p>{result ? `${result.durationMs} ms` : "-"}</p>
+            <p>{latestResult ? `${latestResult.durationMs} ms` : "-"}</p>
           </div>
         </div>
 
-        {result && (
+        {latestResult && (
           <div className="previewWrap">
             <Image
-              src={result.url}
-              alt={`Converted preview for ${selectedFile?.name ?? "image"}`}
+              src={latestResult.url}
+              alt="Converted preview for latest output"
               className="preview"
               width={1200}
               height={900}
@@ -297,24 +455,8 @@ export function UploadShell() {
           </div>
         )}
 
-        <a
-          className={`download ${result ? "" : "disabled"}`}
-          href={result?.url}
-          download={outputName}
-          aria-disabled={!result}
-          onClick={(event) => {
-            if (!result) {
-              event.preventDefault();
-            }
-          }}
-        >
-          Download WebP
-        </a>
-
-        {!result && <small>Convert an image to see output stats and preview.</small>}
+        {!latestResult && <small>Convert images to see latest output stats and preview.</small>}
       </section>
-
-      <small>Conversion runs locally in your browser using WebAssembly.</small>
     </div>
   );
 }
