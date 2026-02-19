@@ -111,6 +111,21 @@ unset NODE_OPTIONS
 pnpm dev
 ```
 
+## Git Commit Policy
+
+This repository enforces checks before each commit through Husky (`.husky/pre-commit`):
+
+- `pnpm check:secrets` scans staged files for token/key/secret patterns
+- `pnpm lint` runs project linting
+
+If either check fails, the commit is blocked.
+
+Emergency bypass (not recommended):
+
+```bash
+git commit --no-verify
+```
+
 ## Release Docs
 
 - Roadmap: `plans/webp-wasm-roadmap.md`
