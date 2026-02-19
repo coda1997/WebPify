@@ -189,6 +189,14 @@ body {
   background: transparent;
 }
 
+.queueUtilityActions {
+  gap: 0.4rem;
+}
+
+.queueUtilityActions button {
+  flex: 1;
+}
+
 .presets {
   display: flex;
   gap: 0.5rem;
@@ -262,6 +270,29 @@ small {
   gap: 0.5rem;
 }
 
+.queueFilters {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.queueFilterBtn {
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.24rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.queueFilterBtn.active {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+
 .queueItem {
   display: flex;
   align-items: center;
@@ -277,6 +308,11 @@ small {
 .queueItem:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
+}
+
+.queueItem.selected {
+  border-color: #94a3b8;
+  background: #f1f5f9;
 }
 
 .queueMeta {
@@ -296,6 +332,30 @@ small {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.queueActionBtn {
+  border: 0;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1f2937;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.queueActionBtn:hover {
+  opacity: 0.7;
+}
+
+.queueEmpty {
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 0.55rem 0.6rem;
+  background: #fff;
 }
 
 .statusPill {
@@ -363,6 +423,22 @@ small {
   gap: 0.8rem;
   border-bottom: 1px solid hsl(var(--border));
   padding-bottom: 0.45rem;
+}
+
+.batchSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.batchSummary span {
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 0.26rem 0.62rem;
+  background: #f8fafc;
+  font-size: 0.78rem;
+  color: #334155;
+  font-weight: 600;
 }
 
 .resultOutput {
