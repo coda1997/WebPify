@@ -1,5 +1,7 @@
 # WebPify
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-WebPify-blue?style=for-the-badge)](https://coda1997.github.io/WebPify/)
+
 WebPify is a browser-based image compressor that converts images to WebP locally using WebAssembly.
 
 The app is built with Next.js + TypeScript and runs encoding inside a Web Worker so the UI stays responsive during conversion.
