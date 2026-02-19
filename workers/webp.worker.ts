@@ -20,7 +20,11 @@ function toWebpFilename(fileName: string): string {
   return `${fileName.slice(0, dotIndex)}.webp`;
 }
 
-async function encodeWebp(buffer: ArrayBuffer, mimeType: string, quality: number): Promise<ArrayBuffer> {
+async function encodeWebp(
+  buffer: ArrayBuffer,
+  mimeType: string,
+  quality: number,
+): Promise<{ outputBuffer: ArrayBuffer; width: number; height: number }> {
   const sourceBlob = new Blob([buffer], { type: mimeType || "application/octet-stream" });
   const bitmap = await createImageBitmap(sourceBlob);
 
@@ -34,7 +38,8 @@ async function encodeWebp(buffer: ArrayBuffer, mimeType: string, quality: number
 
     context.drawImage(bitmap, 0, 0);
     const frame = context.getImageData(0, 0, bitmap.width, bitmap.height);
-    return await encode(frame, { quality });
+    const outputBuffer = await encode(frame, { quality });
+    return { outputBuffer, width: bitmap.width, height: bitmap.height };
   } finally {
     bitmap.close();
   }
@@ -58,7 +63,7 @@ workerScope.onmessage = async (event: MessageEvent<WorkerRequestMessage>) => {
     postMessage({ type: "status", id: message.id, stage: "loading" });
     postMessage({ type: "status", id: message.id, stage: "encoding" });
 
-    const encodedBinary = await encodeWebp(message.buffer, message.mimeType, message.quality);
+    const { outputBuffer, width, height } = await encodeWebp(message.buffer, message.mimeType, message.quality);
     const durationMs = Math.round(performance.now() - startedAt);
 
     workerScope.postMessage(
@@ -66,12 +71,14 @@ workerScope.onmessage = async (event: MessageEvent<WorkerRequestMessage>) => {
         type: "success",
         id: message.id,
         fileName: toWebpFilename(message.fileName),
-        outputBuffer: encodedBinary,
+        outputBuffer,
+        width,
+        height,
         inputBytes,
-        outputBytes: encodedBinary.byteLength,
+        outputBytes: outputBuffer.byteLength,
         durationMs,
       },
-      [encodedBinary],
+      [outputBuffer],
     );
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Failed to encode image.";

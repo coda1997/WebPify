@@ -2,6 +2,11 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatBytes } from "@/lib/format";
 import {
   cancelActiveEncoding,
@@ -16,6 +21,8 @@ type ConversionResult = {
   inputBytes: number;
   outputBytes: number;
   durationMs: number;
+  width: number;
+  height: number;
 };
 
 type QueueItem = {
@@ -38,10 +45,16 @@ export function UploadShell() {
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [latestResult, setLatestResult] = useState<ConversionResult | null>(null);
+  const [latestSourcePreviewUrl, setLatestSourcePreviewUrl] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<"side-by-side" | "compare">("compare");
+  const [comparePosition, setComparePosition] = useState(50);
   const [isDragActive, setIsDragActive] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const compareCanvasRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingCompareRef = useRef(false);
   const resultUrlsRef = useRef<string[]>([]);
+  const sourcePreviewUrlsRef = useRef<string[]>([]);
   const cancellationRequestedRef = useRef(false);
 
   const fileInfo = useMemo(() => {
@@ -62,6 +75,9 @@ export function UploadShell() {
       for (const url of resultUrlsRef.current) {
         URL.revokeObjectURL(url);
       }
+      for (const url of sourcePreviewUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
       cancelActiveEncoding();
       disposeEncoderWorker();
     };
@@ -75,6 +91,12 @@ export function UploadShell() {
       URL.revokeObjectURL(url);
     }
     resultUrlsRef.current = [];
+    for (const url of sourcePreviewUrlsRef.current) {
+      URL.revokeObjectURL(url);
+    }
+    sourcePreviewUrlsRef.current = [];
+    setLatestSourcePreviewUrl(null);
+    setComparePosition(50);
     setLatestResult(null);
     setQueueItems((prev) =>
       prev.map((item) => ({
@@ -183,6 +205,8 @@ export function UploadShell() {
           const outputBlob = new Blob([response.outputBuffer], { type: "image/webp" });
           const outputUrl = URL.createObjectURL(outputBlob);
           resultUrlsRef.current.push(outputUrl);
+          const sourcePreviewUrl = URL.createObjectURL(queueItem.file);
+          sourcePreviewUrlsRef.current.push(sourcePreviewUrl);
 
           const nextResult: ConversionResult = {
             fileName: response.fileName,
@@ -190,6 +214,8 @@ export function UploadShell() {
             inputBytes: response.inputBytes,
             outputBytes: response.outputBytes,
             durationMs: response.durationMs,
+            width: response.width,
+            height: response.height,
           };
 
           workingQueue[index] = {
@@ -199,6 +225,7 @@ export function UploadShell() {
           };
 
           setLatestResult(nextResult);
+          setLatestSourcePreviewUrl(sourcePreviewUrl);
           setQueueItems([...workingQueue]);
         } catch (error) {
           if (isEncodingCancelledError(error)) {
@@ -268,6 +295,42 @@ export function UploadShell() {
     inputRef.current?.click();
   }
 
+  function updateComparePositionFromClientX(clientX: number) {
+    const canvas = compareCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0) {
+      return;
+    }
+
+    const nextPosition = ((clientX - rect.left) / rect.width) * 100;
+    setComparePosition(Math.min(100, Math.max(0, Math.round(nextPosition))));
+  }
+
+  function onComparePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    isDraggingCompareRef.current = true;
+    updateComparePositionFromClientX(event.clientX);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onComparePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!isDraggingCompareRef.current) {
+      return;
+    }
+
+    updateComparePositionFromClientX(event.clientX);
+  }
+
+  function onComparePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    isDraggingCompareRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   const canConvert = queueItems.length > 0 && !isConverting;
   const canReset = queueItems.length > 0 || Boolean(latestResult) || isConverting;
   const currentStep = latestResult ? 3 : queueItems.length > 0 ? 2 : 1;
@@ -294,137 +357,146 @@ export function UploadShell() {
 
   return (
     <div className="shell">
-      <ol className="steps" aria-label="Conversion steps">
-        <li className={`step ${currentStep === 1 ? "active" : ""} ${currentStep > 1 ? "done" : ""}`}>
-          Upload image
-        </li>
-        <li className={`step ${currentStep === 2 ? "active" : ""} ${currentStep > 2 ? "done" : ""}`}>
-          Tune quality
-        </li>
-        <li className={`step ${currentStep === 3 ? "active" : ""}`}>
-          Download WebP
-        </li>
-      </ol>
+      <div className="shellLayout">
+        <Card className="configPanel">
+          <CardContent className="grid gap-4 p-4 pt-4">
+          <ol className="steps" aria-label="Conversion steps">
+            <li className={`step ${currentStep === 1 ? "active" : ""} ${currentStep > 1 ? "done" : ""}`}>
+              Upload image
+            </li>
+            <li className={`step ${currentStep === 2 ? "active" : ""} ${currentStep > 2 ? "done" : ""}`}>
+              Tune quality
+            </li>
+            <li className={`step ${currentStep === 3 ? "active" : ""}`}>
+              Download WebP
+            </li>
+          </ol>
 
-      <div className="field">
-        <label
-          htmlFor="image-upload"
-          className={`dropzone ${isDragActive ? "dragActive" : ""}`}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          tabIndex={0}
-          onKeyDown={onDropzoneKeyDown}
-          aria-describedby="upload-help"
-        >
-          <strong>Drop image here or click to choose</strong>
-          <small id="upload-help">PNG, JPEG, and browser-supported image files</small>
-        </label>
-        <input
-          ref={inputRef}
-          id="image-upload"
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={onSelectFile}
-          className="visuallyHidden"
-        />
-        <small>{fileInfo}</small>
-        <p className="trust">Runs locally in your browser. No upload required.</p>
-      </div>
-
-      <div className="field">
-        <div className="row">
-          <label htmlFor="quality">Quality</label>
-          <strong>{quality}</strong>
-        </div>
-        <input
-          id="quality"
-          type="range"
-          min={1}
-          max={100}
-          value={quality}
-          disabled={isConverting}
-          onChange={(event) => setQuality(Number(event.target.value))}
-          aria-describedby="quality-help"
-        />
-        <small id="quality-help">Higher quality usually means larger files. Presets are intent-focused.</small>
-        <div className="presets" role="group" aria-label="Quality presets">
-          {QUALITY_PRESETS.map((preset) => (
-            <button
-              key={preset.label}
-              type="button"
-              className={`presetBtn ${quality === preset.value ? "active" : ""}`}
-              disabled={isConverting}
-              onClick={() => setQuality(preset.value)}
+          <div className="field">
+            <label
+              htmlFor="image-upload"
+              className={`dropzone ${isDragActive ? "dragActive" : ""}`}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              tabIndex={0}
+              onKeyDown={onDropzoneKeyDown}
+              aria-describedby="upload-help"
             >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="row actions actionsSticky">
-        {latestResult && !isConverting ? (
-          <a className="buttonLike" href={latestResult.url} download={outputName}>
-            Download WebP
-          </a>
-        ) : (
-          <button type="button" disabled={!canConvert} onClick={onConvert}>
-            {isConverting ? "Converting..." : "Convert to WebP"}
-          </button>
-        )}
-        <button type="button" disabled={!canReset} onClick={onReset}>
-          {isConverting ? "Cancel" : "Reset"}
-        </button>
-      </div>
-
-      <p className="status" role="status" aria-live="polite">
-        {statusText}
-      </p>
-
-      {queueItems.length > 0 && (
-        <section className="queue" aria-live="polite">
-          <div className="row">
-            <strong>Batch Queue</strong>
-            <small>
-              {completedCount}/{queueItems.length} completed
-            </small>
+              <strong>Drop image here or click to choose</strong>
+              <small id="upload-help">PNG, JPEG, and browser-supported image files</small>
+            </label>
+            <input
+              ref={inputRef}
+              id="image-upload"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={onSelectFile}
+              className="visuallyHidden"
+            />
+            <small>{fileInfo}</small>
+            <p className="trust">Runs locally in your browser. No upload required.</p>
           </div>
-          <ul className="queueList">
-            {queueItems.map((item) => (
-              <li key={item.id} className="queueItem">
-                <div className="queueMeta">
-                  <p className="queueName">{item.file.name}</p>
-                  <small>{formatBytes(item.file.size)}</small>
-                </div>
-                <div className="queueState">
-                  <span className={`statusPill status-${item.status}`}>{item.status}</span>
-                  {item.result && (
-                    <a className="queueDownload" href={item.result.url} download={item.result.fileName}>
-                      Download
-                    </a>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
-      <section className="result" aria-live="polite">
-        {latestResult && (
-          <div className="outcome">
-            <p className="savingsBadge">You saved {ratio.toFixed(1)}%</p>
-            <small>
-              {formatBytes(latestResult.inputBytes)} → {formatBytes(latestResult.outputBytes)} in {latestResult.durationMs} ms
-            </small>
+          <div className="field">
+            <div className="row">
+              <label htmlFor="quality">Quality</label>
+              <strong>{quality}</strong>
+            </div>
+            <Slider
+              min={1}
+              max={100}
+              step={1}
+              value={[quality]}
+              disabled={isConverting}
+              onValueChange={(value) => setQuality(value[0] ?? quality)}
+              aria-label="Quality"
+            />
+            <small id="quality-help">Higher quality usually means larger files. Presets are intent-focused.</small>
+            <div className="presets" role="group" aria-label="Quality presets">
+              {QUALITY_PRESETS.map((preset) => (
+                <Button
+                  key={preset.label}
+                  type="button"
+                  variant={quality === preset.value ? "default" : "secondary"}
+                  size="sm"
+                  className="presetBtn"
+                  disabled={isConverting}
+                  onClick={() => setQuality(preset.value)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
           </div>
-        )}
 
-        <div className="field">
-          <strong>Output</strong>
-          <span>{outputName}</span>
+          <div className="row actions actionsSticky">
+            {latestResult && !isConverting ? (
+              <a className="buttonLike" href={latestResult.url} download={outputName}>
+                Download WebP
+              </a>
+            ) : (
+              <Button type="button" disabled={!canConvert} onClick={onConvert}>
+                {isConverting ? "Converting..." : "Convert to WebP"}
+              </Button>
+            )}
+            <Button type="button" variant="secondary" disabled={!canReset} onClick={onReset}>
+              {isConverting ? "Cancel" : "Reset"}
+            </Button>
+          </div>
+
+          <p className="status" role="status" aria-live="polite">
+            {statusText}
+          </p>
+
+          {queueItems.length > 0 && (
+            <section className="queue" aria-live="polite">
+              <div className="row">
+                <strong>Batch Queue</strong>
+                <small>
+                  {completedCount}/{queueItems.length} completed
+                </small>
+              </div>
+              <ul className="queueList">
+                {queueItems.map((item) => (
+                  <li key={item.id} className="queueItem">
+                    <div className="queueMeta">
+                      <p className="queueName">{item.file.name}</p>
+                      <small>{formatBytes(item.file.size)}</small>
+                    </div>
+                    <div className="queueState">
+                      <span className={`statusPill status-${item.status}`}>{item.status}</span>
+                      {item.result && (
+                        <a className="queueDownload" href={item.result.url} download={item.result.fileName}>
+                          Download
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          </CardContent>
+        </Card>
+
+        <Card className="result resultPanel">
+        <CardContent className="grid gap-4 p-4 pt-4" aria-live="polite">
+        <div className="resultTop">
+          {latestResult && (
+            <div className="outcome">
+              <Badge className="savingsBadge">You saved {ratio.toFixed(1)}%</Badge>
+              <small>
+                {formatBytes(latestResult.inputBytes)} → {formatBytes(latestResult.outputBytes)} in {latestResult.durationMs} ms
+              </small>
+            </div>
+          )}
+
+          <div className="field resultOutput">
+            <small>Output</small>
+            <span className="outputName">{outputName}</span>
+          </div>
         </div>
 
         <div className="stats">
@@ -442,21 +514,116 @@ export function UploadShell() {
           </div>
         </div>
 
-        {latestResult && (
-          <div className="previewWrap">
-            <Image
-              src={latestResult.url}
-              alt="Converted preview for latest output"
-              className="preview"
-              width={1200}
-              height={900}
-              unoptimized
-            />
-          </div>
+        {latestResult && latestSourcePreviewUrl && (
+          <>
+            <Tabs
+              value={previewMode}
+              onValueChange={(value) => setPreviewMode(value as "side-by-side" | "compare")}
+              className="previewModeBar"
+            >
+              <TabsList>
+                <TabsTrigger value="compare">Compare</TabsTrigger>
+                <TabsTrigger value="side-by-side">Side by side</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {previewMode === "side-by-side" ? (
+              <div className="previewCompare">
+                <div className="previewPane">
+                  <div className="previewPaneMeta">
+                    <strong>Original</strong>
+                    <small>
+                      {latestResult.width}×{latestResult.height}
+                    </small>
+                  </div>
+                  <div className="previewWrap">
+                    <Image
+                      src={latestSourcePreviewUrl}
+                      alt="Original preview for latest selected image"
+                      className="preview"
+                      width={1200}
+                      height={900}
+                      unoptimized
+                    />
+                  </div>
+                </div>
+
+                <div className="previewPane">
+                  <div className="previewPaneMeta">
+                    <strong>Compressed</strong>
+                    <small>
+                      {latestResult.width}×{latestResult.height}
+                    </small>
+                  </div>
+                  <div className="previewWrap">
+                    <Image
+                      src={latestResult.url}
+                      alt="Compressed preview for latest output"
+                      className="preview"
+                      width={1200}
+                      height={900}
+                      unoptimized
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="compareSection">
+                <div
+                  className="compareCanvas"
+                  ref={compareCanvasRef}
+                  onPointerDown={onComparePointerDown}
+                  onPointerMove={onComparePointerMove}
+                  onPointerUp={onComparePointerUp}
+                  onPointerCancel={onComparePointerUp}
+                >
+                  <Image
+                    src={latestSourcePreviewUrl}
+                    alt="Original preview for compare mode"
+                    className="compareImage"
+                    fill
+                    unoptimized
+                  />
+                  <div className="compareOverlay" style={{ clipPath: `inset(0 ${100 - comparePosition}% 0 0)` }}>
+                    <Image
+                      src={latestResult.url}
+                      alt="Compressed preview for compare mode"
+                      className="compareImage"
+                      fill
+                      unoptimized
+                    />
+                  </div>
+                  <div className="compareDivider" style={{ left: `${comparePosition}%` }}>
+                    <span className="compareHandle" />
+                  </div>
+                </div>
+                <div className="row compareMeta">
+                  <small>Original</small>
+                  <small>
+                    {latestResult.width}×{latestResult.height}
+                  </small>
+                  <small>Compressed</small>
+                </div>
+                <label className="compareSliderLabel" htmlFor="compare-slider">
+                  Compare position: {comparePosition}%
+                </label>
+                <Slider
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={[comparePosition]}
+                  onValueChange={(value) => setComparePosition(value[0] ?? comparePosition)}
+                  aria-label="Compare position"
+                />
+              </div>
+            )}
+          </>
         )}
 
         {!latestResult && <small>Convert images to see latest output stats and preview.</small>}
-      </section>
+      </CardContent>
+      </Card>
+      </div>
     </div>
   );
 }

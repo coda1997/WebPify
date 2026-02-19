@@ -18,6 +18,8 @@ export type EncodeSuccessMessage = {
   id: string;
   fileName: string;
   outputBuffer: ArrayBuffer;
+  width: number;
+  height: number;
   inputBytes: number;
   outputBytes: number;
   durationMs: number;
