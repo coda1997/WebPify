@@ -8,10 +8,10 @@ export default function HomePage() {
         <div className="row">
           <h1>WebPify</h1>
           <Link href="/benchmark" className="textLink">
-            Open Benchmark
+            Benchmark (Advanced)
           </Link>
         </div>
-        <p>Phase 4: in-browser conversion with worker cancellation and memory-safe cleanup.</p>
+        <p>Convert images to WebP locally in your browser with fast, private processing.</p>
         <UploadShell />
       </section>
     </main>
