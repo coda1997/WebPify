@@ -139,3 +139,30 @@ git commit --no-verify
 - Core conversion runs locally in the browser.
 - Do not collect raw image data in telemetry.
 - See `plans/privacy-safe-telemetry.md` for suggested event policy.
+
+## GitHub Pages Deployment (CI)
+
+This project includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml` that:
+
+1. Installs dependencies with pnpm
+2. Runs lint
+3. Builds a static export (`out/`)
+4. Uploads the Pages artifact
+5. Deploys to GitHub Pages
+
+### One-time repository settings
+
+In GitHub repository settings:
+
+- Open **Settings → Pages**
+- Under **Build and deployment**, choose **Source: GitHub Actions**
+
+### How base path is handled
+
+- For project pages (like `username/WebPify`), workflow sets `NEXT_PUBLIC_BASE_PATH=/WebPify`
+- For user/org pages repos (like `username.github.io`), base path is empty
+
+### Trigger
+
+- Auto deploy on push to `main`
+- Manual run via **Actions → Deploy to GitHub Pages → Run workflow**
