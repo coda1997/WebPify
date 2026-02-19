@@ -1,51 +1,126 @@
 # WebPify
 
-Phase 5 documentation-ready implementation for a Next.js + TypeScript + pnpm WebP WASM app.
+WebPify is a browser-based image compressor that converts images to WebP locally using WebAssembly.
 
-## Quick Start
+The app is built with Next.js + TypeScript and runs encoding inside a Web Worker so the UI stays responsive during conversion.
 
-1. Install dependencies:
-   - `pnpm install`
-2. Start development server:
-   - `pnpm dev`
-3. Build for production:
-   - `pnpm build`
-4. Start production server:
-   - `pnpm start`
-5. Run lint:
-   - `pnpm lint`
+## Highlights
 
-## Notes
+- In-browser conversion (no image upload required for core flow)
+- Drag and drop + file picker support
+- Quality slider (1-100) and Low/Medium/High presets
+- Conversion stats (input size, output size, savings ratio, duration)
+- Downloadable `.webp` output
+- In-flight conversion cancel support
+- Built-in benchmark page for small/medium/large test cases
 
-- The app performs **single-image conversion to WebP in-browser**.
-- Encoding runs in a dedicated **Web Worker** using `@jsquash/webp` WebAssembly.
-- Current scope is Phase 4: optimized one-file conversion with cancellation, transfer-aware worker messaging, and safer object URL cleanup.
+## Tech Stack
 
-## Current Flow (Phase 4)
+- Framework: Next.js (App Router)
+- Language: TypeScript
+- Package manager: pnpm
+- WebP encoder: `@jsquash/webp` (WASM)
+- Processing model: Dedicated Web Worker
 
-1. Choose an image file (PNG/JPEG and other browser-supported image formats).
-2. Adjust quality (1-100) or use Low/Medium/High presets.
-3. Click Convert to WebP.
-4. Review output stats and preview.
-5. Download the generated `.webp` file.
+## Local Development
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 10+
+
+### Install and Run
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Open:
+
+- Home: `http://localhost:3000`
+- Benchmark: `http://localhost:3000/benchmark`
+
+### Build and Start (Production Mode)
+
+```bash
+pnpm build
+pnpm start
+```
+
+### Lint
+
+```bash
+pnpm lint
+```
+
+## How It Works
+
+1. User selects or drops an image.
+2. UI reads the file as `ArrayBuffer`.
+3. Buffer + quality settings are posted to a Web Worker.
+4. Worker decodes image data and encodes WebP through WASM.
+5. Worker returns compressed bytes + metrics.
+6. UI renders preview/stats and enables download.
 
 ## Benchmark Mode
 
-- Open `/benchmark` from the app header.
-- Click **Run Benchmark** to execute small/medium/large synthetic image tests.
-- Review per-case input/output size, savings %, worker encode time, and wall-clock time.
-- Use **Cancel** to stop an in-flight benchmark run.
+The `/benchmark` page runs 3 synthetic cases:
 
-## Performance-Oriented Behaviors
+- Small (`800×600`)
+- Medium (`1920×1080`)
+- Large (`3840×2160`)
 
-- Worker and WASM initialize lazily on first conversion (not on initial page load).
-- In-flight conversion can be cancelled from the UI.
-- Previous object URLs are revoked before new results and on teardown.
-- Worker output is posted with transferable buffers to reduce copy overhead.
+For each case it reports:
+
+- Input/output size
+- Savings %
+- Worker encode time
+- Wall-clock time
+
+## Project Structure
+
+```text
+app/
+   page.tsx                # Main converter page
+   benchmark/page.tsx      # Benchmark page
+components/
+   upload-shell.tsx        # Converter UI
+   benchmark-runner.tsx    # Benchmark UI and runner
+lib/
+   worker-client.ts        # Worker bridge + cancellation
+   worker-protocol.ts      # Typed request/response protocol
+workers/
+   webp.worker.ts          # WASM encoding worker
+plans/
+   webp-wasm-roadmap.md
+   release-checklist.md
+   browser-validation-matrix.md
+   privacy-safe-telemetry.md
+   release-issue-tracker.md
+```
+
+## Debugging
+
+VS Code launch configs are available in `.vscode/launch.json`.
+
+If `pnpm dev` fails with a `NODE_OPTIONS` preload path error, clear stale debug injection and retry:
+
+```bash
+unset NODE_OPTIONS
+pnpm dev
+```
 
 ## Release Docs
 
+- Roadmap: `plans/webp-wasm-roadmap.md`
 - Release checklist: `plans/release-checklist.md`
 - Browser validation matrix: `plans/browser-validation-matrix.md`
 - Privacy-safe telemetry strategy: `plans/privacy-safe-telemetry.md`
-- Issue tracker for final execution: `plans/release-issue-tracker.md`
+- Issue tracker: `plans/release-issue-tracker.md`
+
+## Privacy Notes
+
+- Core conversion runs locally in the browser.
+- Do not collect raw image data in telemetry.
+- See `plans/privacy-safe-telemetry.md` for suggested event policy.
