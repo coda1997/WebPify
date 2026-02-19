@@ -1,0 +1,12 @@
+{
+  "debug.javascript.autoAttachFilter": "smart",
+  "debug.node.autoAttach": "on",
+  "debug.openDebug": "openOnSessionStart",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+"files.trimTrailingWhitespace": true,
+"chat.tools.terminal.autoApprove": {
+    "pnpm": true
+}
+}
