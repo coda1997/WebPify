@@ -82,6 +82,7 @@ Make the converter feel like a polished product (guided, confidence-building, an
 ### 5) Batch conversion queue
 - Multi-file upload with per-file progress + per-file download.
 - Keep implementation simple: sequential worker jobs first.
+- Detailed implementation spec: `plans/batch-conversion-ux-spec.md`
 
 ### 6) Intent-based presets
 - Replace/augment low-medium-high with intent labels:

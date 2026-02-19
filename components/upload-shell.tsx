@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import JSZip from "jszip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,8 +31,11 @@ type QueueItem = {
   file: File;
   status: "queued" | "processing" | "done" | "error" | "cancelled";
   result?: ConversionResult;
+  sourcePreviewUrl?: string;
   errorMessage?: string;
 };
+
+type QueueFilter = "all" | "processing" | "done" | "failed";
 
 const QUALITY_PRESETS = [
   { label: "Web", value: 55 },
@@ -43,9 +47,10 @@ export function UploadShell() {
   const [quality, setQuality] = useState(75);
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [isConverting, setIsConverting] = useState(false);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
+  const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [latestResult, setLatestResult] = useState<ConversionResult | null>(null);
-  const [latestSourcePreviewUrl, setLatestSourcePreviewUrl] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"side-by-side" | "compare">("compare");
   const [comparePosition, setComparePosition] = useState(50);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -83,8 +88,73 @@ export function UploadShell() {
     };
   }, []);
 
-  const completedCount = queueItems.filter((item) => item.status === "done").length;
+  useEffect(() => {
+    if (!selectedPreviewId) {
+      return;
+    }
+
+    const hasSelectedDoneItem = queueItems.some((item) => item.id === selectedPreviewId && item.status === "done");
+    if (!hasSelectedDoneItem) {
+      setSelectedPreviewId(null);
+    }
+  }, [queueItems, selectedPreviewId]);
+
+  const completedItems = queueItems.filter((item) => item.status === "done" && item.result);
+  const completedCount = completedItems.length;
+  const failedCount = queueItems.filter((item) => item.status === "error").length;
+  const cancelledCount = queueItems.filter((item) => item.status === "cancelled").length;
+  const executableCount = queueItems.filter((item) => item.status !== "done" && item.status !== "processing").length;
+  const savedBytesTotal = completedItems.reduce(
+    (sum, item) => sum + ((item.result?.inputBytes ?? 0) - (item.result?.outputBytes ?? 0)),
+    0,
+  );
+  const avgDurationMs =
+    completedItems.length > 0
+      ? completedItems.reduce((sum, item) => sum + (item.result?.durationMs ?? 0), 0) / completedItems.length
+      : 0;
+
+  const selectedResultItem = useMemo(() => {
+    if (selectedPreviewId) {
+      const selected = queueItems.find((item) => item.id === selectedPreviewId && item.status === "done" && item.result);
+      if (selected) {
+        return selected;
+      }
+    }
+
+    for (let index = queueItems.length - 1; index >= 0; index -= 1) {
+      const item = queueItems[index];
+      if (item.status === "done" && item.result) {
+        return item;
+      }
+    }
+
+    return null;
+  }, [queueItems, selectedPreviewId]);
+
+  const latestResult = selectedResultItem?.result ?? null;
+  const latestSourcePreviewUrl = selectedResultItem?.sourcePreviewUrl ?? null;
   const processingItem = queueItems.find((item) => item.status === "processing");
+  const visibleQueueItems = queueItems.filter((item) => {
+    if (queueFilter === "all") {
+      return true;
+    }
+    if (queueFilter === "processing") {
+      return item.status === "processing";
+    }
+    if (queueFilter === "done") {
+      return item.status === "done";
+    }
+    return item.status === "error";
+  });
+
+  function revokeItemUrls(item: QueueItem) {
+    if (item.result?.url) {
+      URL.revokeObjectURL(item.result.url);
+    }
+    if (item.sourcePreviewUrl) {
+      URL.revokeObjectURL(item.sourcePreviewUrl);
+    }
+  }
 
   function clearQueueResults() {
     for (const url of resultUrlsRef.current) {
@@ -95,14 +165,14 @@ export function UploadShell() {
       URL.revokeObjectURL(url);
     }
     sourcePreviewUrlsRef.current = [];
-    setLatestSourcePreviewUrl(null);
+    setSelectedPreviewId(null);
     setComparePosition(50);
-    setLatestResult(null);
     setQueueItems((prev) =>
       prev.map((item) => ({
         ...item,
         status: "queued",
         result: undefined,
+        sourcePreviewUrl: undefined,
         errorMessage: undefined,
       })),
     );
@@ -134,6 +204,7 @@ export function UploadShell() {
     );
     setErrorMessage(skipped > 0 ? `${skipped} non-image file(s) were skipped.` : null);
     setIsCancelled(false);
+    setQueueFilter("all");
   }
 
   function onSelectFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -159,7 +230,7 @@ export function UploadShell() {
   }
 
   async function onConvert() {
-    if (queueItems.length === 0 || isConverting) {
+    if (queueItems.length === 0 || isConverting || executableCount === 0) {
       return;
     }
 
@@ -167,12 +238,11 @@ export function UploadShell() {
     setErrorMessage(null);
     setIsCancelled(false);
     cancellationRequestedRef.current = false;
-    clearQueueResults();
-
     let workingQueue: QueueItem[] = queueItems.map((item) => ({
       ...item,
-      status: "queued",
-      result: undefined,
+      status: item.status === "done" ? "done" : "queued",
+      result: item.status === "done" ? item.result : undefined,
+      sourcePreviewUrl: item.status === "done" ? item.sourcePreviewUrl : undefined,
       errorMessage: undefined,
     }));
     setQueueItems(workingQueue);
@@ -180,6 +250,10 @@ export function UploadShell() {
 
     try {
       for (let index = 0; index < workingQueue.length; index += 1) {
+        if (workingQueue[index].status === "done") {
+          continue;
+        }
+
         if (cancellationRequestedRef.current) {
           workingQueue = workingQueue.map((item) =>
             item.status === "queued" ? { ...item, status: "cancelled" } : item,
@@ -222,10 +296,10 @@ export function UploadShell() {
             ...queueItem,
             status: "done",
             result: nextResult,
+            sourcePreviewUrl,
           };
 
-          setLatestResult(nextResult);
-          setLatestSourcePreviewUrl(sourcePreviewUrl);
+          setSelectedPreviewId(queueItem.id);
           setQueueItems([...workingQueue]);
         } catch (error) {
           if (isEncodingCancelledError(error)) {
@@ -278,11 +352,117 @@ export function UploadShell() {
 
     clearQueueResults();
     setQueueItems([]);
-    setLatestResult(null);
     setErrorMessage(null);
     setIsCancelled(false);
+    setQueueFilter("all");
+    setSelectedPreviewId(null);
     if (inputRef.current) {
       inputRef.current.value = "";
+    }
+  }
+
+  function onRemoveQueueItem(itemId: string) {
+    if (isConverting) {
+      return;
+    }
+
+    setQueueItems((prev) => {
+      const target = prev.find((item) => item.id === itemId);
+      if (target) {
+        revokeItemUrls(target);
+      }
+      return prev.filter((item) => item.id !== itemId);
+    });
+  }
+
+  function onRetryFailed() {
+    if (isConverting) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsCancelled(false);
+    setQueueItems((prev) =>
+      prev.map((item) => (item.status === "error" || item.status === "cancelled" ? { ...item, status: "queued", errorMessage: undefined } : item)),
+    );
+  }
+
+  function onClearCompleted() {
+    if (isConverting) {
+      return;
+    }
+
+    setQueueItems((prev) => {
+      for (const item of prev) {
+        if (item.status === "done") {
+          revokeItemUrls(item);
+        }
+      }
+      return prev.filter((item) => item.status !== "done");
+    });
+    setSelectedPreviewId(null);
+    setComparePosition(50);
+  }
+
+  function onSelectPreview(item: QueueItem) {
+    if (item.status !== "done") {
+      setErrorMessage("Preview available after conversion.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setSelectedPreviewId(item.id);
+  }
+
+  function triggerBrowserDownload(url: string, fileName: string) {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  }
+
+  async function onDownloadAll() {
+    if (isConverting || completedItems.length === 0 || isDownloadingAll) {
+      return;
+    }
+
+    if (completedItems.length === 1) {
+      const onlyItem = completedItems[0];
+      if (!onlyItem.result) {
+        return;
+      }
+      triggerBrowserDownload(onlyItem.result.url, onlyItem.result.fileName);
+      return;
+    }
+
+    setIsDownloadingAll(true);
+    setErrorMessage(null);
+
+    try {
+      const zip = new JSZip();
+
+      for (const item of completedItems) {
+        if (!item.result) {
+          continue;
+        }
+        const response = await fetch(item.result.url);
+        const blob = await response.blob();
+        zip.file(item.result.fileName, blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(zipBlob);
+      triggerBrowserDownload(zipUrl, "webpify-exports.zip");
+      window.setTimeout(() => {
+        URL.revokeObjectURL(zipUrl);
+      }, 1000);
+    } catch {
+      setErrorMessage("Failed to prepare ZIP download. Please download files individually.");
+    } finally {
+      setIsDownloadingAll(false);
     }
   }
 
@@ -331,8 +511,11 @@ export function UploadShell() {
     }
   }
 
-  const canConvert = queueItems.length > 0 && !isConverting;
-  const canReset = queueItems.length > 0 || Boolean(latestResult) || isConverting;
+  const canConvert = queueItems.length > 0 && !isConverting && executableCount > 0;
+  const canReset = queueItems.length > 0 || isConverting;
+  const canRetryFailed = !isConverting && (failedCount > 0 || cancelledCount > 0);
+  const canClearCompleted = !isConverting && completedCount > 0;
+  const canDownloadAll = !isConverting && completedCount > 0 && !isDownloadingAll;
   const currentStep = latestResult ? 3 : queueItems.length > 0 ? 2 : 1;
   const ratio =
     latestResult && latestResult.inputBytes > 0
@@ -345,14 +528,20 @@ export function UploadShell() {
     statusText = processingItem
       ? `Converting ${processingItem.file.name} (${completedCount + 1}/${queueItems.length})... keep this tab open.`
       : "Converting images in Web Worker... keep this tab open.";
+  } else if (isDownloadingAll) {
+    statusText = "Preparing ZIP download...";
   } else if (isCancelled) {
-    statusText = "Conversion cancelled.";
+    statusText = `Conversion cancelled. Completed ${completedCount}/${queueItems.length}.`;
   } else if (errorMessage) {
     statusText = errorMessage;
   } else if (latestResult) {
-    statusText = `Done. Converted ${completedCount}/${queueItems.length} file(s). Download your latest WebP next.`;
+    if (failedCount > 0 || cancelledCount > 0) {
+      statusText = `Completed ${completedCount}/${queueItems.length}. ${failedCount} failed.`;
+    } else {
+      statusText = `Done. Converted ${completedCount}/${queueItems.length} file(s).`;
+    }
   } else {
-    statusText = "Select or drop an image to start. Processing stays in your browser.";
+    statusText = "Select or drop images to start. Processing stays in your browser.";
   }
 
   return (
@@ -383,7 +572,7 @@ export function UploadShell() {
               onKeyDown={onDropzoneKeyDown}
               aria-describedby="upload-help"
             >
-              <strong>Drop image here or click to choose</strong>
+              <strong>Drop images here or click to choose</strong>
               <small id="upload-help">PNG, JPEG, and browser-supported image files</small>
             </label>
             <input
@@ -432,13 +621,13 @@ export function UploadShell() {
           </div>
 
           <div className="row actions actionsSticky">
-            {latestResult && !isConverting ? (
-              <a className="buttonLike" href={latestResult.url} download={outputName}>
-                Download WebP
-              </a>
+            {completedCount > 0 && !isConverting ? (
+              <Button type="button" disabled={!canDownloadAll} onClick={onDownloadAll}>
+                {isDownloadingAll ? "Preparing..." : completedCount > 1 ? "Download all (ZIP)" : "Download WebP"}
+              </Button>
             ) : (
               <Button type="button" disabled={!canConvert} onClick={onConvert}>
-                {isConverting ? "Converting..." : "Convert to WebP"}
+                {isConverting ? "Converting..." : "Convert all"}
               </Button>
             )}
             <Button type="button" variant="secondary" disabled={!canReset} onClick={onReset}>
@@ -446,43 +635,136 @@ export function UploadShell() {
             </Button>
           </div>
 
+          <div className="row queueUtilityActions">
+            <Button type="button" size="sm" variant="ghost" disabled={!canRetryFailed} onClick={onRetryFailed}>
+              Retry failed
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={!canClearCompleted} onClick={onClearCompleted}>
+              Clear completed
+            </Button>
+          </div>
+
           <p className="status" role="status" aria-live="polite">
             {statusText}
           </p>
 
-          {queueItems.length > 0 && (
-            <section className="queue" aria-live="polite">
-              <div className="row">
-                <strong>Batch Queue</strong>
-                <small>
-                  {completedCount}/{queueItems.length} completed
-                </small>
-              </div>
-              <ul className="queueList">
-                {queueItems.map((item) => (
-                  <li key={item.id} className="queueItem">
-                    <div className="queueMeta">
-                      <p className="queueName">{item.file.name}</p>
-                      <small>{formatBytes(item.file.size)}</small>
-                    </div>
-                    <div className="queueState">
-                      <span className={`statusPill status-${item.status}`}>{item.status}</span>
-                      {item.result && (
-                        <a className="queueDownload" href={item.result.url} download={item.result.fileName}>
-                          Download
-                        </a>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
           </CardContent>
         </Card>
 
         <Card className="result resultPanel">
         <CardContent className="grid gap-4 p-4 pt-4" aria-live="polite">
+        <div className="batchSummary" role="status" aria-live="polite">
+          <span>{queueItems.length} files</span>
+          <span>{completedCount} done</span>
+          <span>{failedCount} failed</span>
+          {cancelledCount > 0 && <span>{cancelledCount} cancelled</span>}
+          <span>Saved {formatBytes(Math.max(0, savedBytesTotal))}</span>
+          <span>Avg {(avgDurationMs / 1000).toFixed(2)} s/image</span>
+        </div>
+
+        {queueItems.length > 0 && (
+          <section className="queue" aria-live="polite">
+            <div className="row">
+              <strong>Batch Queue</strong>
+              <small>
+                {completedCount}/{queueItems.length} completed
+              </small>
+            </div>
+            <div className="queueFilters" role="tablist" aria-label="Queue filters">
+              <button
+                type="button"
+                className={`queueFilterBtn ${queueFilter === "all" ? "active" : ""}`}
+                onClick={() => setQueueFilter("all")}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`queueFilterBtn ${queueFilter === "processing" ? "active" : ""}`}
+                onClick={() => setQueueFilter("processing")}
+              >
+                Processing
+              </button>
+              <button
+                type="button"
+                className={`queueFilterBtn ${queueFilter === "done" ? "active" : ""}`}
+                onClick={() => setQueueFilter("done")}
+              >
+                Done
+              </button>
+              <button
+                type="button"
+                className={`queueFilterBtn ${queueFilter === "failed" ? "active" : ""}`}
+                onClick={() => setQueueFilter("failed")}
+              >
+                Failed
+              </button>
+            </div>
+            <ul className="queueList">
+              {visibleQueueItems.map((item) => (
+                <li
+                  key={item.id}
+                  className={`queueItem ${selectedPreviewId === item.id ? "selected" : ""}`}
+                  onClick={() => onSelectPreview(item)}
+                >
+                  <div className="queueMeta">
+                    <p className="queueName">{item.file.name}</p>
+                    <small>
+                      {formatBytes(item.file.size)}
+                      {item.result &&
+                        ` → ${formatBytes(item.result.outputBytes)} (${Math.max(
+                          0,
+                          ((item.result.inputBytes - item.result.outputBytes) / item.result.inputBytes) * 100,
+                        ).toFixed(1)}% saved)`}
+                    </small>
+                  </div>
+                  <div className="queueState">
+                    <span className={`statusPill status-${item.status}`}>{item.status}</span>
+                    {item.result && (
+                      <a className="queueDownload" href={item.result.url} download={item.result.fileName}>
+                        Download
+                      </a>
+                    )}
+                    {!item.result && (item.status === "error" || item.status === "cancelled") && (
+                      <button
+                        type="button"
+                        className="queueActionBtn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setQueueItems((prev) =>
+                            prev.map((candidate) =>
+                              candidate.id === item.id ? { ...candidate, status: "queued", errorMessage: undefined } : candidate,
+                            ),
+                          );
+                        }}
+                      >
+                        Retry
+                      </button>
+                    )}
+                    {!isConverting && item.status !== "processing" && (
+                      <button
+                        type="button"
+                        className="queueActionBtn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRemoveQueueItem(item.id);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {visibleQueueItems.length === 0 && (
+                <li className="queueEmpty">
+                  <small>No items for this filter.</small>
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
+
         <div className="resultTop">
           {latestResult && (
             <div className="outcome">
