@@ -1,170 +1,156 @@
-# WebPify
+# 🖼️ WebPify
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-WebPify-blue?style=for-the-badge)](https://coda1997.github.io/WebPify/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 
-WebPify is a browser-based image compressor that converts images to WebP locally using WebAssembly.
+**WebPify** is a lightning-fast, privacy-first browser-based image compressor. It converts your images to the highly optimized WebP format entirely locally using WebAssembly (WASM). 
 
-The app is built with Next.js + TypeScript and runs encoding inside a Web Worker so the UI stays responsive during conversion.
+Because all processing happens directly in your browser via Web Workers, your images never leave your device, ensuring **100% privacy** and a responsive user interface.
 
-## Highlights
+---
 
-- In-browser conversion (no image upload required for core flow)
-- Drag and drop + file picker support
-- Quality slider (1-100) and Low/Medium/High presets
-- Conversion stats (input size, output size, savings ratio, duration)
-- Downloadable `.webp` output
-- In-flight conversion cancel support
-- Built-in benchmark page for small/medium/large test cases
+## ✨ Features
 
-## Tech Stack
+- **🔒 Privacy-First**: 100% in-browser conversion. No server uploads required.
+- **⚡ Blazing Fast**: Powered by WebAssembly (`@jsquash/webp`) for near-native encoding speeds.
+- **🧵 Non-Blocking UI**: Heavy lifting is offloaded to a dedicated Web Worker, keeping the app smooth.
+- **🎛️ Fine-Grained Control**: Adjust quality (1-100) with a slider or use quick presets (Low/Medium/High).
+- **📊 Real-Time Metrics**: Instantly see input/output sizes, savings ratio, and conversion duration.
+- **🛑 Cancellable Operations**: Abort in-flight conversions instantly if you change your mind.
+- **🧪 Built-in Benchmarking**: Test performance across different image sizes directly in the app.
+- **🖱️ Intuitive UX**: Seamless drag-and-drop and file picker support.
 
-- Framework: Next.js (App Router)
-- Language: TypeScript
-- Package manager: pnpm
-- WebP encoder: `@jsquash/webp` (WASM)
-- Processing model: Dedicated Web Worker
+---
 
-## Local Development
+## 🚀 Quick Start
 
 ### Prerequisites
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
 
-- Node.js 20+
-- pnpm 10+
+### Local Development
 
-### Install and Run
+1. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
 
-```bash
-pnpm install
-pnpm dev
-```
+2. **Start the development server:**
+   ```bash
+   pnpm dev
+   ```
 
-Open:
+3. **Open in your browser:**
+   - Main App: [http://localhost:3000](http://localhost:3000)
+   - Benchmark Suite: [http://localhost:3000/benchmark](http://localhost:3000/benchmark)
 
-- Home: `http://localhost:3000`
-- Benchmark: `http://localhost:3000/benchmark`
-
-### Build and Start (Production Mode)
+### Production Build
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-### Lint
+---
 
-```bash
-pnpm lint
-```
+## 🛠️ Tech Stack
 
-## How It Works
+- **Framework:** Next.js (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Package Manager:** pnpm
+- **WebP Encoder:** `@jsquash/webp` (WASM)
+- **Processing:** Dedicated Web Workers
 
-1. User selects or drops an image.
-2. UI reads the file as `ArrayBuffer`.
-3. Buffer + quality settings are posted to a Web Worker.
-4. Worker decodes image data and encodes WebP through WASM.
-5. Worker returns compressed bytes + metrics.
-6. UI renders preview/stats and enables download.
+---
 
-## Benchmark Mode
+## 🧠 How It Works
 
-The `/benchmark` page runs 3 synthetic cases:
+1. **Input:** You select or drag-and-drop an image.
+2. **Read:** The UI reads the file into memory as an `ArrayBuffer`.
+3. **Dispatch:** The buffer and your quality settings are sent to a background Web Worker.
+4. **Process:** The Worker decodes the image and encodes it to WebP using WebAssembly.
+5. **Return:** The Worker sends back the compressed bytes and performance metrics.
+6. **Result:** The UI updates with a preview, stats, and a download button.
 
-- Small (`800×600`)
-- Medium (`1920×1080`)
-- Large (`3840×2160`)
+---
 
-For each case it reports:
+## 📊 Benchmark Mode
 
-- Input/output size
-- Savings %
-- Worker encode time
-- Wall-clock time
+WebPify includes a dedicated `/benchmark` page to test encoding performance across three synthetic test cases:
 
-## Project Structure
+- **Small:** `800 × 600`
+- **Medium:** `1920 × 1080`
+- **Large:** `3840 × 2160`
+
+For each resolution, the benchmark reports:
+- Input vs. Output size
+- Compression savings (%)
+- Worker encode time vs. Wall-clock time
+
+---
+
+## 📁 Project Structure
 
 ```text
 app/
-   page.tsx                # Main converter page
-   benchmark/page.tsx      # Benchmark page
+ ├── page.tsx                # Main converter UI
+ └── benchmark/page.tsx      # Benchmark suite
 components/
-   upload-shell.tsx        # Converter UI
-   benchmark-runner.tsx    # Benchmark UI and runner
+ ├── upload-shell.tsx        # Drag & drop / Converter component
+ └── benchmark-runner.tsx    # Benchmark execution UI
 lib/
-   worker-client.ts        # Worker bridge + cancellation
-   worker-protocol.ts      # Typed request/response protocol
+ ├── worker-client.ts        # Worker bridge & cancellation logic
+ └── worker-protocol.ts      # Typed request/response definitions
 workers/
-   webp.worker.ts          # WASM encoding worker
-plans/
-   webp-wasm-roadmap.md
-   release-checklist.md
-   browser-validation-matrix.md
-   privacy-safe-telemetry.md
-   release-issue-tracker.md
+ └── webp.worker.ts          # WASM encoding Web Worker
+plans/                       # Project documentation & roadmaps
+ ├── webp-wasm-roadmap.md
+ ├── release-checklist.md
+ └── ...
 ```
 
-## Debugging
+---
 
-VS Code launch configs are available in `.vscode/launch.json`.
+## 🔒 Security & Privacy
 
-If `pnpm dev` fails with a `NODE_OPTIONS` preload path error, clear stale debug injection and retry:
+### Privacy Notes
+- **Zero Data Collection:** Core conversion runs locally. We do not collect raw image data.
+- **Telemetry:** Any future telemetry will be strictly privacy-safe (see `plans/privacy-safe-telemetry.md`).
 
+### Git Commit Policy
+This repository uses Husky (`.husky/pre-commit`) to enforce quality and security:
+- `pnpm check:secrets`: Scans staged files to prevent accidental commits of tokens/keys.
+- `pnpm lint`: Ensures code quality.
+
+*(Emergency bypass: `git commit --no-verify` - not recommended)*
+
+---
+
+## ☁️ Deployment (GitHub Pages)
+
+WebPify is automatically deployed to GitHub Pages via GitHub Actions (`.github/workflows/deploy-pages.yml`).
+
+**Workflow Steps:**
+1. Installs dependencies via pnpm.
+2. Runs linters.
+3. Builds a static export (`out/`).
+4. Deploys the artifact to GitHub Pages.
+
+**Setup Instructions:**
+1. Go to your repository **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. The workflow will automatically handle the `NEXT_PUBLIC_BASE_PATH` depending on whether it's a project page or a user page.
+
+---
+
+## 🐛 Debugging
+
+VS Code launch configurations are provided in `.vscode/launch.json`.
+
+If `pnpm dev` fails with a `NODE_OPTIONS` preload path error, clear the stale debug injection:
 ```bash
 unset NODE_OPTIONS
 pnpm dev
 ```
-
-## Git Commit Policy
-
-This repository enforces checks before each commit through Husky (`.husky/pre-commit`):
-
-- `pnpm check:secrets` scans staged files for token/key/secret patterns
-- `pnpm lint` runs project linting
-
-If either check fails, the commit is blocked.
-
-Emergency bypass (not recommended):
-
-```bash
-git commit --no-verify
-```
-
-## Release Docs
-
-- Roadmap: `plans/webp-wasm-roadmap.md`
-- Release checklist: `plans/release-checklist.md`
-- Browser validation matrix: `plans/browser-validation-matrix.md`
-- Privacy-safe telemetry strategy: `plans/privacy-safe-telemetry.md`
-- Issue tracker: `plans/release-issue-tracker.md`
-
-## Privacy Notes
-
-- Core conversion runs locally in the browser.
-- Do not collect raw image data in telemetry.
-- See `plans/privacy-safe-telemetry.md` for suggested event policy.
-
-## GitHub Pages Deployment (CI)
-
-This project includes a GitHub Actions workflow at `.github/workflows/deploy-pages.yml` that:
-
-1. Installs dependencies with pnpm
-2. Runs lint
-3. Builds a static export (`out/`)
-4. Uploads the Pages artifact
-5. Deploys to GitHub Pages
-
-### One-time repository settings
-
-In GitHub repository settings:
-
-- Open **Settings → Pages**
-- Under **Build and deployment**, choose **Source: GitHub Actions**
-
-### How base path is handled
-
-- For project pages (like `username/WebPify`), workflow sets `NEXT_PUBLIC_BASE_PATH=/WebPify`
-- For user/org pages repos (like `username.github.io`), base path is empty
-
-### Trigger
-
-- Auto deploy on push to `main`
-- Manual run via **Actions → Deploy to GitHub Pages → Run workflow**
