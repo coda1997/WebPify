@@ -22,7 +22,7 @@ export default function HomePage() {
               Benchmark
             </Link>
             <Link
-              href="https://github.com"
+              href="https://github.com/coda1997/WebPify"
               target="_blank"
               className="hidden items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 hover:shadow-md md:flex"
             >
