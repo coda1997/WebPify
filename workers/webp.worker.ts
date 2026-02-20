@@ -1,4 +1,4 @@
-import { encode } from "@jsquash/webp";
+import encode, { init as initWebpEncoder } from "@jsquash/webp/encode.js";
 import {
   type WorkerRequestMessage,
   type WorkerResponseMessage,
@@ -10,6 +10,61 @@ type WorkerScope = {
 };
 
 const workerScope = self as unknown as WorkerScope;
+let webpEncoderInitPromise: Promise<unknown> | null = null;
+let assetBaseOrigin: string | null = null;
+let fetchPatched = false;
+let originalFetch: typeof fetch | null = null;
+
+function isHttpOrigin(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^https?:\/\//.test(value);
+}
+
+function toAbsoluteWorkerUrl(path: string): string | null {
+  if (!path.startsWith("/")) {
+    return null;
+  }
+
+  if (isHttpOrigin(assetBaseOrigin)) {
+    try {
+      return new URL(path, assetBaseOrigin).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function patchWorkerFetchIfNeeded(): void {
+  if (fetchPatched || !isHttpOrigin(assetBaseOrigin)) {
+    return;
+  }
+
+  originalFetch = self.fetch.bind(self);
+  self.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (typeof input === "string") {
+      const resolved = toAbsoluteWorkerUrl(input);
+      return originalFetch!(resolved ?? input, init);
+    }
+
+    if (input instanceof URL) {
+      const resolved = toAbsoluteWorkerUrl(input.toString());
+      return originalFetch!(resolved ?? input, init);
+    }
+
+    return originalFetch!(input, init);
+  }) as typeof fetch;
+
+  fetchPatched = true;
+}
+
+function ensureWebpEncoderReady(): Promise<unknown> {
+  if (!webpEncoderInitPromise) {
+    webpEncoderInitPromise = initWebpEncoder();
+  }
+
+  return webpEncoderInitPromise;
+}
 
 function toWebpFilename(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
@@ -25,6 +80,8 @@ async function encodeWebp(
   mimeType: string,
   quality: number,
 ): Promise<{ outputBuffer: ArrayBuffer; width: number; height: number }> {
+  await ensureWebpEncoderReady();
+
   const sourceBlob = new Blob([buffer], { type: mimeType || "application/octet-stream" });
   const bitmap = await createImageBitmap(sourceBlob);
 
@@ -50,6 +107,11 @@ workerScope.onmessage = async (event: MessageEvent<WorkerRequestMessage>) => {
 
   if (!message || message.type !== "encode") {
     return;
+  }
+
+  if (isHttpOrigin(message.baseOrigin)) {
+    assetBaseOrigin = message.baseOrigin;
+    patchWorkerFetchIfNeeded();
   }
 
   const postMessage = (payload: WorkerResponseMessage) => {

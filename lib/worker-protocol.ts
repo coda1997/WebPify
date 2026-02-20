@@ -1,6 +1,7 @@
 export type EncodeRequestMessage = {
   type: "encode";
   id: string;
+  baseOrigin?: string;
   fileName: string;
   mimeType: string;
   buffer: ArrayBuffer;
