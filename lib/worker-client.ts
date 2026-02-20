@@ -92,6 +92,7 @@ export async function encodeImageWithWorker(input: EncodeInput): Promise<EncodeS
     const request: EncodeRequestMessage = {
       type: "encode",
       id,
+      baseOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
       fileName: input.fileName,
       mimeType: input.mimeType,
       buffer: input.buffer,
