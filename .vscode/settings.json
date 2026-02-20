@@ -6,6 +6,9 @@
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
   "chat.tools.terminal.autoApprove": {
-    "pnpm": true
+    "pnpm": true,
+    "git checkout": true,
+    "git add": true,
+    "git commit": true
   }
 }
