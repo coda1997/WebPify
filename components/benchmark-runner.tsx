@@ -8,6 +8,9 @@ import {
   isEncodingCancelledError,
 } from "@/lib/worker-client";
 import { formatBytes } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Play, XCircle, Activity, Clock, HardDrive, Percent } from "lucide-react";
 
 type BenchmarkCase = {
   label: "Small" | "Medium" | "Large";
@@ -173,65 +176,123 @@ export function BenchmarkRunner() {
   }
 
   return (
-    <section className="bench">
-      <p className="benchDesc">
-        One-click benchmark for three synthetic images at quality {BENCHMARK_QUALITY}. Use this to compare
-        encode latency and size savings across devices.
-      </p>
-
-      <div className="row actions">
-        <button type="button" onClick={runBenchmark} disabled={isRunning}>
-          {isRunning ? "Running..." : "Run Benchmark"}
-        </button>
-        <button type="button" onClick={cancelBenchmark} disabled={!isRunning}>
-          Cancel
-        </button>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <p className="text-slate-600">
+          One-click benchmark for three synthetic images at quality <strong className="text-slate-900">{BENCHMARK_QUALITY}</strong>.
+          Use this to compare encode latency and size savings across devices.
+        </p>
       </div>
 
-      <p className="status" role="status" aria-live="polite">
-        {errorMessage ?? statusText}
-      </p>
+      <div className="flex flex-wrap gap-3">
+        <Button
+          type="button"
+          onClick={runBenchmark}
+          disabled={isRunning}
+          className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+        >
+          {isRunning ? (
+            <><Activity className="mr-2 h-4 w-4 animate-pulse" /> Running...</>
+          ) : (
+            <><Play className="mr-2 h-4 w-4" /> Run Benchmark</>
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={cancelBenchmark}
+          disabled={!isRunning}
+          className="text-slate-600"
+        >
+          <XCircle className="mr-2 h-4 w-4" /> Cancel
+        </Button>
+      </div>
 
-      <div className="benchTableWrap">
-        <table className="benchTable">
-          <thead>
-            <tr>
-              <th>Case</th>
-              <th>Dimensions</th>
-              <th>Input</th>
-              <th>Output</th>
-              <th>Savings</th>
-              <th>Worker</th>
-              <th>Wall</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
+      <div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${
+        errorMessage ? "bg-red-50 text-red-700 border border-red-100" :
+        isRunning ? "bg-blue-50 text-blue-700 border border-blue-100" :
+        rows.length > 0 ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+        "bg-slate-50 text-slate-600 border border-slate-100"
+      }`} role="status" aria-live="polite">
+        <Activity className={`h-4 w-4 mt-0.5 shrink-0 ${isRunning ? "animate-pulse" : ""}`} />
+        <span className="leading-tight">{errorMessage ?? statusText}</span>
+      </div>
+
+      <Card className="border-slate-200/60 shadow-sm bg-white/80 backdrop-blur-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
               <tr>
-                <td colSpan={7}>No results yet.</td>
+                <th className="px-4 py-3 font-semibold">Case</th>
+                <th className="px-4 py-3 font-semibold">Dimensions</th>
+                <th className="px-4 py-3 font-semibold">Input</th>
+                <th className="px-4 py-3 font-semibold">Output</th>
+                <th className="px-4 py-3 font-semibold">Savings</th>
+                <th className="px-4 py-3 font-semibold">Worker</th>
+                <th className="px-4 py-3 font-semibold">Wall</th>
               </tr>
-            )}
-            {rows.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td>{row.dimensions}</td>
-                <td>{formatBytes(row.inputBytes)}</td>
-                <td>{formatBytes(row.outputBytes)}</td>
-                <td>{row.savingsPercent.toFixed(1)}%</td>
-                <td>{row.workerMs} ms</td>
-                <td>{row.wallMs} ms</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    No results yet. Click &quot;Run Benchmark&quot; to start.
+                  </td>
+                </tr>
+              )}
+              {rows.map((row) => (
+                <tr key={row.label} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900">{row.label}</td>
+                  <td className="px-4 py-3 text-slate-600">{row.dimensions}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatBytes(row.inputBytes)}</td>
+                  <td className="px-4 py-3 text-emerald-600 font-medium">{formatBytes(row.outputBytes)}</td>
+                  <td className="px-4 py-3 text-emerald-600 font-medium">{row.savingsPercent.toFixed(1)}%</td>
+                  <td className="px-4 py-3 text-slate-600">{row.workerMs} ms</td>
+                  <td className="px-4 py-3 text-slate-600">{row.wallMs} ms</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {averages && (
-        <p className="benchSummary">
-          Average savings: {averages.avgSavings.toFixed(1)}% · Average worker time: {Math.round(averages.avgWorkerMs)} ms
-          · Average wall time: {Math.round(averages.avgWallMs)} ms
-        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card className="border-slate-200/60 shadow-sm bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <Percent className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Savings</p>
+                <p className="text-xl font-bold text-slate-900">{averages.avgSavings.toFixed(1)}%</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-slate-200/60 shadow-sm bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                <HardDrive className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Worker Time</p>
+                <p className="text-xl font-bold text-slate-900">{Math.round(averages.avgWorkerMs)} ms</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-slate-200/60 shadow-sm bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-purple-600">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Wall Time</p>
+                <p className="text-xl font-bold text-slate-900">{Math.round(averages.avgWallMs)} ms</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
-    </section>
+    </div>
   );
 }
