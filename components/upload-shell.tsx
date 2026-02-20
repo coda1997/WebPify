@@ -539,7 +539,7 @@ export function UploadShell() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
       {/* Left Panel: Configuration & Queue */}
-      <div className="flex flex-col gap-6 sticky top-24">
+      <div className="flex flex-col gap-6 lg:sticky lg:top-24">
         <Card className="border-slate-200/60 shadow-sm bg-white/80 backdrop-blur-sm">
           <CardContent className="p-5 flex flex-col gap-6">
             {/* Steps */}
@@ -870,7 +870,7 @@ export function UploadShell() {
                 ) : (
                   <div className="flex flex-col w-full h-full gap-4">
                     <div
-                      className="relative flex-1 rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm cursor-ew-resize select-none min-h-[300px]"
+                      className="relative flex-1 rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm cursor-ew-resize select-none min-h-[300px] touch-none"
                       ref={compareCanvasRef}
                       onPointerDown={onComparePointerDown}
                       onPointerMove={onComparePointerMove}
