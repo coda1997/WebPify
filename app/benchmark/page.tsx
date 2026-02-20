@@ -9,8 +9,8 @@ export default function BenchmarkPage() {
       <header className="sticky top-0 z-50 w-full border-b border-slate-200/50 bg-white/80 backdrop-blur-xl">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
-              <Activity className="h-4 w-4" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-blue-500 text-white shadow-sm font-bold text-lg">
+              W
             </div>
             <span className="text-xl font-bold tracking-tight text-slate-900">WebPify Benchmark</span>
           </div>
